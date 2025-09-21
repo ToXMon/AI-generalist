@@ -91,7 +91,7 @@ const AIChat = () => {
       }
 
       // Add AI response
-      const aiMessage: ChatMessage = {
+      const aiMessage = {
         id: Date.now() + 1,
         type: 'ai',
         content: response.response,
