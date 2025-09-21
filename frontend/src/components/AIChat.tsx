@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Minimize2, Maximize2, Sparkles } from 'lucide-react';
 import { chatAPI } from '../services/api';
-import { ChatMessage, SessionStorage } from '../types';
 
 const AIChat: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([
