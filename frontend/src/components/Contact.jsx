@@ -21,7 +21,7 @@ const Contact = () => {
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
@@ -46,7 +46,7 @@ const Contact = () => {
       } else {
         setError(response.error || 'Failed to send message');
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Contact form error:', error);
       setError(error.response?.data?.detail || error.message || 'Failed to send message');
     } finally {
