@@ -18,6 +18,8 @@ const AIChat: React.FC = () => {
   const [isMinimized, setIsMinimized] = useState<boolean>(false);
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState<boolean>(true);
+  const [hasLoadedFromStorage, setHasLoadedFromStorage] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = (): void => {
@@ -25,30 +27,51 @@ const AIChat: React.FC = () => {
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    // Only scroll to bottom if:
+    // 1. Not initial load AND
+    // 2. We've already loaded messages from storage AND
+    // 3. There are actually new messages (length increased from previous)
+    if (!isInitialLoad && hasLoadedFromStorage) {
+      // Add a small delay to ensure this doesn't interfere with page-level scrolling
+      const timeoutId = setTimeout(() => {
+        scrollToBottom();
+      }, 50);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [messages, isInitialLoad, hasLoadedFromStorage]);
 
   // Load session from localStorage on component mount
   useEffect(() => {
-    const savedSession = localStorage.getItem('aiChatSession');
-    if (savedSession) {
-      try {
-        const sessionData = JSON.parse(savedSession);
-        if (sessionData.sessionId) {
-          setSessionId(sessionData.sessionId);
+    const loadSession = () => {
+      const savedSession = localStorage.getItem('aiChatSession');
+      if (savedSession) {
+        try {
+          const sessionData = JSON.parse(savedSession);
+          if (sessionData.sessionId) {
+            setSessionId(sessionData.sessionId);
+          }
+          if (sessionData.messages && sessionData.messages.length > 1) {
+            // Convert timestamp strings back to Date objects
+            const messagesWithDates = sessionData.messages.map((msg: any) => ({
+              ...msg,
+              timestamp: new Date(msg.timestamp)
+            }));
+            setMessages(messagesWithDates);
+          }
+        } catch (error) {
+          console.error('Failed to load chat session:', error);
         }
-        if (sessionData.messages && sessionData.messages.length > 1) {
-          // Convert timestamp strings back to Date objects
-          const messagesWithDates = sessionData.messages.map((msg: any) => ({
-            ...msg,
-            timestamp: new Date(msg.timestamp)
-          }));
-          setMessages(messagesWithDates);
-        }
-      } catch (error) {
-        console.error('Failed to load chat session:', error);
       }
-    }
+      // Mark that we've loaded from storage and initial load is complete
+      setHasLoadedFromStorage(true);
+      setIsInitialLoad(false);
+    };
+
+    // Use a small timeout to ensure the component is fully mounted
+    const timeoutId = setTimeout(loadSession, 100);
+    
+    return () => clearTimeout(timeoutId);
   }, []);
 
   // Save session to localStorage whenever messages change
@@ -61,6 +84,14 @@ const AIChat: React.FC = () => {
       localStorage.setItem('aiChatSession', JSON.stringify(sessionData));
     }
   }, [messages, sessionId]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    setInputMessage(e.target.value);
+    // Clear error when user starts typing
+    if (error) {
+      setError(null);
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
@@ -106,16 +137,35 @@ const AIChat: React.FC = () => {
     } catch (error: any) {
       console.error('Chat error:', error);
 
-      // Add error message
-      const errorMessage: ChatMessage = {
+      // Extract error message safely
+      let errorMessage = "I'm sorry, I'm having trouble connecting to my AI brain right now.";
+      
+      if (error?.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+
+      // Add error message to chat
+      const errorChatMessage: ChatMessage = {
         id: Date.now() + 1,
         type: 'ai',
-        content: "I'm sorry, I'm having trouble connecting to my AI brain right now. This might be because the Venice AI API key hasn't been configured yet. Please try again later or contact Tolu directly!",
+        content: `${errorMessage} Please try again later or contact Tolu directly if the issue persists!`,
         timestamp: new Date()
       };
 
-      setMessages(prev => [...prev, errorMessage]);
-      setError(error.response?.data?.detail || error.message || 'Failed to get AI response');
+      setMessages(prev => [...prev, errorChatMessage]);
+      
+      // Set user-friendly error for display
+      const displayError = error?.response?.status === 504 
+        ? "Venice AI service is temporarily unavailable" 
+        : error?.response?.status === 503
+        ? "Unable to connect to AI service"
+        : "Failed to get AI response";
+        
+      setError(displayError);
     } finally {
       setIsLoading(false);
     }
@@ -276,7 +326,7 @@ const AIChat: React.FC = () => {
                   <input
                     type="text"
                     value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
+                    onChange={handleInputChange}
                     placeholder="Ask me anything about Tolu's background, skills, or projects..."
                     className="flex-1 border border-gray-300 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     disabled={isLoading}

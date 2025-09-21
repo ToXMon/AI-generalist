@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import "./App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Header from "./components/Header";
@@ -11,6 +11,16 @@ import Contact from "./components/Contact";
 import Footer from "./components/Footer";
 
 const Home: React.FC = () => {
+  // Ensure page loads at the top - delayed to override any component scrolling
+  useEffect(() => {
+    // Use a timeout to ensure all components have loaded before scrolling to top
+    const timeoutId = setTimeout(() => {
+      window.scrollTo(0, 0);
+    }, 200);
+    
+    return () => clearTimeout(timeoutId);
+  }, []);
+
   return (
     <div className="min-h-screen">
       <Header />
