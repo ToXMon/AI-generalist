@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Send, Mail, Linkedin, CheckCircle } from 'lucide-react';
 import { contactAPI } from '../services/api';
-import { ContactForm as ContactFormType } from '../types';
 
 const Contact: React.FC = () => {
   const [formData, setFormData] = useState<ContactFormType>({
