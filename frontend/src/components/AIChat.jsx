@@ -118,7 +118,7 @@ const AIChat = () => {
     }
   };
 
-  const formatTime = (timestamp: Date): string => {
+  const formatTime = (timestamp) => {
     return new Intl.DateTimeFormat('en', {
       hour: 'numeric',
       minute: '2-digit',
@@ -126,7 +126,7 @@ const AIChat = () => {
     }).format(timestamp);
   };
 
-  const suggestedQuestions: string[] = [
+  const suggestedQuestions = [
     "What's your background in AI?",
     "Tell me about your career transition",
     "What technologies do you work with?",
