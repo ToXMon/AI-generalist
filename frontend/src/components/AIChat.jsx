@@ -100,11 +100,11 @@ const AIChat = () => {
 
       setMessages(prev => [...prev, aiMessage]);
       
-    } catch (error: any) {
+    } catch (error) {
       console.error('Chat error:', error);
       
       // Add error message
-      const errorMessage: ChatMessage = {
+      const errorMessage = {
         id: Date.now() + 1,
         type: 'ai',
         content: "I'm sorry, I'm having trouble connecting to my AI brain right now. This might be because the Venice AI API key hasn't been configured yet. Please try again later or contact Tolu directly!",
