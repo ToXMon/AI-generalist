@@ -1,20 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Minimize2, Maximize2, Sparkles } from 'lucide-react';
-import { mockChatConversations } from '../data/mock';
+import { chatAPI } from '../services/api';
+import { ChatMessage, SessionStorage } from '../types';
 
-const AIChat = () => {
-  const [messages, setMessages] = useState([
+const AIChat: React.FC = () => {
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 1,
       type: 'ai',
-      content: "Hi! I'm Tolu's AI assistant. Ask me anything about his background, skills, projects, or career journey. I'm here to help you learn more about his expertise in AI and full-stack development!",
+      content: "Hi! I'm Tolu's AI assistant powered by Venice AI. Ask me anything about his background, skills, projects, or career journey. I'm here to help you learn more about his expertise in AI and full-stack development!",
       timestamp: new Date()
     }
   ]);
-  const [inputMessage, setInputMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
-  const messagesEndRef = useRef(null);
+  const [inputMessage, setInputMessage] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isMinimized, setIsMinimized] = useState<boolean>(false);
+  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -24,12 +27,48 @@ const AIChat = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = async (e) => {
+  // Load session from localStorage on component mount
+  useEffect(() => {
+    const savedSession = localStorage.getItem('aiChatSession');
+    if (savedSession) {
+      try {
+        const sessionData: SessionStorage = JSON.parse(savedSession);
+        if (sessionData.sessionId) {
+          setSessionId(sessionData.sessionId);
+        }
+        if (sessionData.messages && sessionData.messages.length > 1) {
+          // Convert timestamp strings back to Date objects
+          const messagesWithDates = sessionData.messages.map(msg => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          }));
+          setMessages(messagesWithDates);
+        }
+      } catch (error) {
+        console.error('Failed to load chat session:', error);
+      }
+    }
+  }, []);
+
+  // Save session to localStorage whenever messages change
+  useEffect(() => {
+    if (sessionId && messages.length > 1) {
+      const sessionData: SessionStorage = {
+        sessionId,
+        messages
+      };
+      localStorage.setItem('aiChatSession', JSON.stringify(sessionData));
+    }
+  }, [messages, sessionId]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
 
+    setError(null);
+
     // Add user message
-    const userMessage = {
+    const userMessage: ChatMessage = {
       id: Date.now(),
       type: 'user',
       content: inputMessage,
@@ -40,29 +79,47 @@ const AIChat = () => {
     setInputMessage('');
     setIsLoading(true);
 
-    // Simulate AI response with mock data
-    setTimeout(() => {
-      const response = mockChatConversations.find(conv => 
-        inputMessage.toLowerCase().includes('background') && conv.question.includes('background') ||
-        inputMessage.toLowerCase().includes('technology') && conv.question.includes('technologies') ||
-        inputMessage.toLowerCase().includes('transition') && conv.question.includes('transition') ||
-        inputMessage.toLowerCase().includes('different') && conv.question.includes('different') ||
-        inputMessage.toLowerCase().includes('project') && conv.question.includes('project')
-      ) || mockChatConversations[Math.floor(Math.random() * mockChatConversations.length)];
+    try {
+      // Call backend API
+      const response = await chatAPI.sendMessage({
+        message: inputMessage,
+        sessionId
+      });
 
-      const aiMessage = {
+      // Set session ID from response if not already set
+      if (!sessionId) {
+        setSessionId(response.sessionId);
+      }
+
+      // Add AI response
+      const aiMessage: ChatMessage = {
         id: Date.now() + 1,
         type: 'ai',
-        content: response.answer,
-        timestamp: new Date()
+        content: response.response,
+        timestamp: new Date(response.timestamp)
       };
 
       setMessages(prev => [...prev, aiMessage]);
+      
+    } catch (error: any) {
+      console.error('Chat error:', error);
+      
+      // Add error message
+      const errorMessage: ChatMessage = {
+        id: Date.now() + 1,
+        type: 'ai',
+        content: "I'm sorry, I'm having trouble connecting to my AI brain right now. This might be because the Venice AI API key hasn't been configured yet. Please try again later or contact Tolu directly!",
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+      setError(error.response?.data?.detail || error.message || 'Failed to get AI response');
+    } finally {
       setIsLoading(false);
-    }, 1000 + Math.random() * 1500);
+    }
   };
 
-  const formatTime = (timestamp) => {
+  const formatTime = (timestamp: Date): string => {
     return new Intl.DateTimeFormat('en', {
       hour: 'numeric',
       minute: '2-digit',
@@ -70,14 +127,14 @@ const AIChat = () => {
     }).format(timestamp);
   };
 
-  const suggestedQuestions = [
+  const suggestedQuestions: string[] = [
     "What's your background in AI?",
     "Tell me about your career transition",
     "What technologies do you work with?",
     "What makes you different from other developers?"
   ];
 
-  const handleSuggestionClick = (question) => {
+  const handleSuggestionClick = (question: string) => {
     setInputMessage(question);
   };
 
@@ -91,7 +148,7 @@ const AIChat = () => {
           </h2>
           <div className="w-24 h-1 bg-gradient-to-r from-blue-600 to-purple-600 mx-auto rounded-full mb-4"></div>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            Ask me anything about my background, skills, projects, or career journey. I'm powered by advanced AI to give you detailed insights!
+            Ask me anything about my background, skills, projects, or career journey. I'm powered by Venice AI to give you detailed insights!
           </p>
         </div>
 
@@ -181,6 +238,15 @@ const AIChat = () => {
                 <div ref={messagesEndRef} />
               </div>
 
+              {/* Error Message */}
+              {error && (
+                <div className="px-6 pb-2">
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-red-600 text-sm">{error}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Suggested Questions */}
               {messages.length === 1 && (
                 <div className="px-6 pb-4">
@@ -226,10 +292,10 @@ const AIChat = () => {
           )}
         </div>
 
-        {/* AI Disclaimer */}
+        {/* AI Status */}
         <div className="text-center mt-8">
           <p className="text-gray-500 text-sm">
-            🤖 This AI assistant uses mock responses for demonstration. In the final version, it will be powered by Venice AI with real-time responses.
+            🤖 Powered by Venice AI • {sessionId ? `Session: ${sessionId.slice(0, 8)}...` : 'Starting new session'}
           </p>
         </div>
       </div>
