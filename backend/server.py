@@ -1,14 +1,20 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
-from typing import List
+from pydantic import BaseModel, Field, EmailStr
+from typing import List, Optional
 import uuid
 from datetime import datetime
+import httpx
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import asyncio
 
 
 ROOT_DIR = Path(__file__).parent
@@ -35,10 +41,42 @@ class StatusCheck(BaseModel):
 class StatusCheckCreate(BaseModel):
     client_name: str
 
+class ChatMessage(BaseModel):
+    message: str
+    sessionId: Optional[str] = None
+
+class ChatResponse(BaseModel):
+    response: str
+    sessionId: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+class ContactForm(BaseModel):
+    name: str
+    email: EmailStr
+    company: Optional[str] = None
+    subject: str
+    message: str
+
+class ContactResponse(BaseModel):
+    success: bool
+    messageId: Optional[str] = None
+    error: Optional[str] = None
+
+# Venice AI Configuration
+VENICE_API_KEY = os.getenv('VENICE_API_KEY')
+VENICE_BASE_URL = "https://api.venice.ai/api/v1"
+
+# Email Configuration
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+EMAIL_USER = os.getenv('EMAIL_USER')
+EMAIL_PASS = os.getenv('EMAIL_PASS')
+EMAIL_TO = os.getenv('EMAIL_TO', 'tolu.a.shekoni@gmail.com')
+
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Tolu Shekoni Portfolio API - Venice AI Powered"}
 
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
