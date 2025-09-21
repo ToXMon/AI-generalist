@@ -1,54 +1,58 @@
 import React, { useState } from 'react';
 import { Send, Mail, Linkedin, CheckCircle } from 'lucide-react';
-import { mockContactSubmissions } from '../data/mock';
+import { contactAPI } from '../services/api';
+import { ContactForm as ContactFormType } from '../types';
 
-const Contact = () => {
-  const [formData, setFormData] = useState({
+const Contact: React.FC = () => {
+  const [formData, setFormData] = useState<ContactFormType>({
     name: '',
     email: '',
     company: '',
     subject: '',
     message: ''
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleChange = (e) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
     });
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setError(null);
 
-    // Simulate form submission
-    setTimeout(() => {
-      const submission = {
-        id: Date.now(),
-        ...formData,
-        timestamp: new Date(),
-        status: 'submitted'
-      };
+    try {
+      const response = await contactAPI.submitForm(formData);
       
-      mockContactSubmissions.push(submission);
-      setIsSubmitted(true);
+      if (response.success) {
+        setIsSubmitted(true);
+        
+        // Reset form after 3 seconds
+        setTimeout(() => {
+          setFormData({
+            name: '',
+            email: '',
+            company: '',
+            subject: '',
+            message: ''
+          });
+          setIsSubmitted(false);
+        }, 3000);
+      } else {
+        setError(response.error || 'Failed to send message');
+      }
+    } catch (error: any) {
+      console.error('Contact form error:', error);
+      setError(error.response?.data?.detail || error.message || 'Failed to send message');
+    } finally {
       setIsSubmitting(false);
-      
-      // Reset form after 3 seconds
-      setTimeout(() => {
-        setFormData({
-          name: '',
-          email: '',
-          company: '',
-          subject: '',
-          message: ''
-        });
-        setIsSubmitted(false);
-      }, 3000);
-    }, 1500);
+    }
   };
 
   return (
@@ -138,6 +142,14 @@ const Contact = () => {
             {!isSubmitted ? (
               <>
                 <h3 className="text-2xl font-semibold text-white mb-6">Send a Message</h3>
+                
+                {/* Error Message */}
+                {error && (
+                  <div className="mb-6 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                    <p className="text-red-400 text-sm">{error}</p>
+                  </div>
+                )}
+                
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
