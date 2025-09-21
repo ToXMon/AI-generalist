@@ -1,0 +1,92 @@
+---
+version: "2.0"
+
+services:
+  frontend:
+    image: docker.io/wijnaldum/ai-generalist-frontend:v1.3
+    expose:
+      - port: 80
+        as: 80
+        to:
+          - global: true
+    env:
+      - REACT_APP_BACKEND_URL=
+    depends_on:
+      - backend
+
+  backend:
+    image: docker.io/wijnaldum/ai-generalist-backend:v1.3
+    expose:
+      - port: 8000
+        as: 8000
+        to:
+          - service: frontend
+    env:
+      - CORS_ORIGINS=*
+      - VENICE_API_KEY=${VENICE_API_KEY}
+      - EMAIL_HOST=smtp.gmail.com
+      - EMAIL_PORT=587
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASS=${EMAIL_PASS}
+      - EMAIL_TO=tolu.a.shekoni@gmail.com
+
+profiles:
+  compute:
+    frontend-profile:
+      resources:
+        cpu:
+          units: "0.5"
+        memory:
+          size: "512Mi"
+        storage:
+          size: "512Mi"
+    backend-profile:
+      resources:
+        cpu:
+          units: "1.0"
+        memory:
+          size: "1Gi"
+        storage:
+          size: "1Gi"
+  placement:
+    global:
+      attributes:
+        host: akash
+      pricing:
+        frontend-profile:
+          denom: uakt
+          amount: "10000"
+        backend-profile:
+          denom: uakt
+          amount: "20000"
+
+deployment:
+  frontend:
+    global:
+      profile: frontend-profile
+      count: 1
+  backend:
+    global:
+      profile: backend-profile
+      count: 1
+  placement:
+    global:
+      attributes:
+        host: akash
+      pricing:
+        frontend-profile:
+          denom: uakt
+          amount: "10000"
+        backend-profile:
+          denom: uakt
+          amount: "20000"
+
+deployment:
+  frontend:
+    global:
+      profile: frontend-profile
+      count: 1
+  backend:
+    global:
+      profile: backend-profile
+      count: 1
