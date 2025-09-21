@@ -67,7 +67,7 @@ const AIChat = () => {
     setError(null);
 
     // Add user message
-    const userMessage: ChatMessage = {
+    const userMessage = {
       id: Date.now(),
       type: 'user',
       content: inputMessage,
