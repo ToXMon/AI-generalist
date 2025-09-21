@@ -2,19 +2,19 @@ import React, { useState } from 'react';
 import { Send, Mail, Linkedin, CheckCircle } from 'lucide-react';
 import { contactAPI } from '../services/api';
 
-const Contact: React.FC = () => {
-  const [formData, setFormData] = useState<ContactFormType>({
+const Contact = () => {
+  const [formData, setFormData] = useState({
     name: '',
     email: '',
     company: '',
     subject: '',
     message: ''
   });
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [error, setError] = useState(null);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (e) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
