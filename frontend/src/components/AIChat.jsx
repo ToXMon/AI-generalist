@@ -133,7 +133,7 @@ const AIChat = () => {
     "What makes you different from other developers?"
   ];
 
-  const handleSuggestionClick = (question: string) => {
+  const handleSuggestionClick = (question) => {
     setInputMessage(question);
   };
 
