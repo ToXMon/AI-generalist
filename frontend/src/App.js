@@ -6,8 +6,8 @@ import Hero from "./components/Hero";
 import About from "./components/About";
 import Skills from "./components/Skills";
 import Projects from "./components/Projects";
-import AIChat from "./components/AIChat";
-import Contact from "./components/Contact";
+import AIChat from "./components/AIChat.tsx";
+import Contact from "./components/Contact.tsx";
 import Footer from "./components/Footer";
 
 const Home = () => {
