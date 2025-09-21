@@ -2,26 +2,26 @@ import React, { useState } from 'react';
 import { Send, Mail, Linkedin, CheckCircle } from 'lucide-react';
 import { contactAPI } from '../services/api';
 
-const Contact = () => {
-  const [formData, setFormData] = useState({
+const Contact: React.FC = () => {
+  const [formData, setFormData] = useState<ContactFormType>({
     name: '',
     email: '',
     company: '',
     subject: '',
     message: ''
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const [error, setError] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleChange = (e) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
     });
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
@@ -46,7 +46,7 @@ const Contact = () => {
       } else {
         setError(response.error || 'Failed to send message');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Contact form error:', error);
       setError(error.response?.data?.detail || error.message || 'Failed to send message');
     } finally {

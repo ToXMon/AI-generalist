@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Minimize2, Maximize2, Sparkles } from 'lucide-react';
 import { chatAPI } from '../services/api';
 
-const AIChat = () => {
-  const [messages, setMessages] = useState([
+const AIChat: React.FC = () => {
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 1,
       type: 'ai',
@@ -11,12 +11,12 @@ const AIChat = () => {
       timestamp: new Date()
     }
   ]);
-  const [inputMessage, setInputMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [sessionId, setSessionId] = useState(undefined);
-  const [error, setError] = useState(null);
-  const messagesEndRef = useRef(null);
+  const [inputMessage, setInputMessage] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isMinimized, setIsMinimized] = useState<boolean>(false);
+  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -31,7 +31,7 @@ const AIChat = () => {
     const savedSession = localStorage.getItem('aiChatSession');
     if (savedSession) {
       try {
-        const sessionData = JSON.parse(savedSession);
+        const sessionData: SessionStorage = JSON.parse(savedSession);
         if (sessionData.sessionId) {
           setSessionId(sessionData.sessionId);
         }
@@ -52,7 +52,7 @@ const AIChat = () => {
   // Save session to localStorage whenever messages change
   useEffect(() => {
     if (sessionId && messages.length > 1) {
-      const sessionData = {
+      const sessionData: SessionStorage = {
         sessionId,
         messages
       };
@@ -60,14 +60,14 @@ const AIChat = () => {
     }
   }, [messages, sessionId]);
 
-  const handleSendMessage = async (e) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
 
     setError(null);
 
     // Add user message
-    const userMessage = {
+    const userMessage: ChatMessage = {
       id: Date.now(),
       type: 'user',
       content: inputMessage,
@@ -91,7 +91,7 @@ const AIChat = () => {
       }
 
       // Add AI response
-      const aiMessage = {
+      const aiMessage: ChatMessage = {
         id: Date.now() + 1,
         type: 'ai',
         content: response.response,
@@ -100,11 +100,11 @@ const AIChat = () => {
 
       setMessages(prev => [...prev, aiMessage]);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Chat error:', error);
       
       // Add error message
-      const errorMessage = {
+      const errorMessage: ChatMessage = {
         id: Date.now() + 1,
         type: 'ai',
         content: "I'm sorry, I'm having trouble connecting to my AI brain right now. This might be because the Venice AI API key hasn't been configured yet. Please try again later or contact Tolu directly!",
@@ -118,7 +118,7 @@ const AIChat = () => {
     }
   };
 
-  const formatTime = (timestamp) => {
+  const formatTime = (timestamp: Date): string => {
     return new Intl.DateTimeFormat('en', {
       hour: 'numeric',
       minute: '2-digit',
@@ -126,14 +126,14 @@ const AIChat = () => {
     }).format(timestamp);
   };
 
-  const suggestedQuestions = [
+  const suggestedQuestions: string[] = [
     "What's your background in AI?",
     "Tell me about your career transition",
     "What technologies do you work with?",
     "What makes you different from other developers?"
   ];
 
-  const handleSuggestionClick = (question) => {
+  const handleSuggestionClick = (question: string) => {
     setInputMessage(question);
   };
 
