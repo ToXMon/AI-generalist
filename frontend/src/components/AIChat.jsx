@@ -31,7 +31,7 @@ const AIChat = () => {
     const savedSession = localStorage.getItem('aiChatSession');
     if (savedSession) {
       try {
-        const sessionData: SessionStorage = JSON.parse(savedSession);
+        const sessionData = JSON.parse(savedSession);
         if (sessionData.sessionId) {
           setSessionId(sessionData.sessionId);
         }
@@ -52,7 +52,7 @@ const AIChat = () => {
   // Save session to localStorage whenever messages change
   useEffect(() => {
     if (sessionId && messages.length > 1) {
-      const sessionData: SessionStorage = {
+      const sessionData = {
         sessionId,
         messages
       };
@@ -60,7 +60,7 @@ const AIChat = () => {
     }
   }, [messages, sessionId]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
 
