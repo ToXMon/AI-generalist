@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Minimize2, Maximize2, Sparkles } from 'lucide-react';
 import { chatAPI } from '../services/api';
 
-const AIChat: React.FC = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
+const AIChat = () => {
+  const [messages, setMessages] = useState([
     {
       id: 1,
       type: 'ai',
@@ -11,12 +11,12 @@ const AIChat: React.FC = () => {
       timestamp: new Date()
     }
   ]);
-  const [inputMessage, setInputMessage] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isMinimized, setIsMinimized] = useState<boolean>(false);
-  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [inputMessage, setInputMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [sessionId, setSessionId] = useState(undefined);
+  const [error, setError] = useState(null);
+  const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
