@@ -1,12 +1,12 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, AsyncGenerator
 import uuid
 from datetime import datetime
 import httpx
@@ -19,13 +19,18 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+# Import the new AI orchestrator and memory system
+from ai_orchestrator import AIOrchestrator, QueryType
+from conversation_memory import ConversationMemory, ConversationContext
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 load_dotenv(ROOT_DIR / '.env')
 
-# In-memory storage for chat sessions
-chat_sessions: Dict[str, Dict] = {}
+# Initialize AI orchestrator and memory systems
+ai_orchestrator = AIOrchestrator()
+conversation_memory = ConversationMemory(max_session_age_hours=24)
+conversation_context = ConversationContext()
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -49,6 +54,14 @@ class ChatResponse(BaseModel):
     response: str
     sessionId: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    query_type: Optional[str] = None
+    model_used: Optional[str] = None
+    tokens_estimated: Optional[int] = None
+
+class ChatStreamRequest(BaseModel):
+    message: str
+    sessionId: Optional[str] = None
+    stream: bool = True  # Enable streaming by default
 
 class ContactForm(BaseModel):
     name: str
@@ -79,111 +92,192 @@ async def root():
     return {"message": "Tolu Shekoni Portfolio API - Venice AI Powered"}
 
 @api_router.post("/chat", response_model=ChatResponse)
-@limiter.limit("10/minute")
+@limiter.limit("20/minute")
 async def chat_with_ai(request: Request, chat_input: ChatMessage):
-    """Handle AI chat conversations using Venice AI"""
+    """
+    Enhanced chat endpoint with intelligent model routing and streaming
+    - Classifies queries for optimal model selection
+    - Maintains rich conversation context
+    - Provides metadata about model selection
+    """
     
     if not VENICE_API_KEY:
         logger.error("Venice AI API key not configured")
         raise HTTPException(status_code=500, detail="Venice AI API key not configured")
     
-    # Log API key status for debugging (without exposing the key)
-    logger.info(f"Venice API key configured: {bool(VENICE_API_KEY)}, length: {len(VENICE_API_KEY) if VENICE_API_KEY else 0}")
-    
     # Generate or use existing session ID
     session_id = chat_input.sessionId or str(uuid.uuid4())
     
     try:
-        # Get conversation history for this session from in-memory storage
-        session_data = chat_sessions.get(session_id, {})
-        conversation_history = session_data.get("messages", [])
+        # Get or create conversation session
+        session = conversation_memory.get_session(session_id)
+        if not session:
+            session = conversation_memory.create_session(session_id)
         
-        # Build messages for Venice AI
-        messages = [
-            {
-                "role": "system", 
-                "content": """You are a helpful AI assistant powered by Venice AI. You have access to web search capabilities to provide accurate and up-to-date information. 
-
-You can:
-- Answer questions on any topic using your knowledge and web search
-- Provide explanations, summaries, and insights
-- Help with problem-solving and research
-- Engage in general conversation
-
-When answering questions:
-- Use web search when you need current information or to verify facts
-- Be informative, accurate, and helpful
-- Cite sources when appropriate
-- Keep responses clear and well-structured"""
-            }
-        ]
+        # Get conversation context for model
+        conversation_history = session.get("messages", [])
         
-        # Add conversation history
-        for msg in conversation_history[-10:]:  # Last 10 messages for context
-            messages.append({
-                "role": msg["role"],
-                "content": msg["content"]
-            })
+        # Get optimized context window
+        context_window = conversation_memory.get_context_window(
+            session_id,
+            include_recent=8,
+            include_system_summary=True
+        )
         
-        # Add current user message
-        messages.append({
-            "role": "user",
-            "content": chat_input.message
-        })
+        # Classify the query for intelligent routing
+        query_type = ai_orchestrator.classify_query(
+            chat_input.message, 
+            context_window
+        )
         
-        # Call Venice AI
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            logger.info(f"Making Venice AI request to: {VENICE_BASE_URL}/chat/completions")
-            response = await client.post(
-                f"{VENICE_BASE_URL}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {VENICE_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "qwen3-235b",
-                    "messages": messages,
-                    "temperature": 0.7,
-                    "max_completion_tokens": 512,
-                    "venice_parameters": {
-                        "include_venice_system_prompt": False,
-                        "enable_web_search": "on"
-                    }
-                }
-            )
-            
-            if response.status_code != 200:
-                error_detail = response.text
-                try:
-                    error_detail = response.json()
-                except Exception:
-                    pass
-                logger.error(f"Venice AI API error: {response.status_code} - {error_detail}")
-                logger.error(f"Request headers: Authorization: Bearer {VENICE_API_KEY[:10]}...")  # Log first 10 chars only
-                raise HTTPException(status_code=500, detail=f"Venice AI API error: {response.status_code}")
-            
-            result = response.json()
-            ai_response = result["choices"][0]["message"]["content"]
+        # Get context about user/Tolu
+        session_stats = conversation_memory.get_session_stats(session_id)
+        user_context = conversation_context.build_context_for_query(
+            chat_input.message,
+            session_stats,
+            [m.get("content", "")[:30] for m in conversation_history[-3:] if m.get("role") == "user"]
+        )
         
-        # Save conversation to in-memory storage
-        new_messages = conversation_history + [
-            {"role": "user", "content": chat_input.message, "timestamp": datetime.utcnow().isoformat()},
-            {"role": "assistant", "content": ai_response, "timestamp": datetime.utcnow().isoformat()}
-        ]
+        # Add user message to conversation
+        conversation_memory.add_message(
+            session_id,
+            "user",
+            chat_input.message,
+            {"query_type": query_type.value}
+        )
         
-        chat_sessions[session_id] = {
-            "messages": new_messages,
-            "updatedAt": datetime.utcnow().isoformat()
-        }
+        logger.info(f"Session {session_id}: Query type={query_type.value}, History size={len(conversation_history)}")
+        
+        # Get the full response
+        ai_response = await ai_orchestrator.chat(
+            user_message=chat_input.message,
+            conversation_history=context_window,
+            query_type=query_type,
+            user_context=user_context if user_context else None
+        )
+        
+        # Add AI response to conversation
+        conversation_memory.add_message(
+            session_id,
+            "assistant",
+            ai_response,
+            {"query_type": query_type.value}
+        )
+        
+        # Get model config for response metadata
+        model_config = ai_orchestrator.MODEL_CONFIG[query_type]
         
         return ChatResponse(
             response=ai_response,
-            sessionId=session_id
+            sessionId=session_id,
+            query_type=query_type.value,
+            model_used=model_config["model"],
+            tokens_estimated=session_stats.get("estimated_tokens", 0)
         )
         
     except Exception as e:
-        logger.error(f"Chat error: {str(e)}")
+        logger.error(f"Chat error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Chat service error: {str(e)}")
+
+
+@api_router.post("/chat/stream")
+@limiter.limit("20/minute")
+async def chat_stream(request: Request, chat_input: ChatMessage):
+    """
+    Streaming chat endpoint for real-time token streaming
+    Returns Server-Sent Events (SSE) stream
+    """
+    
+    if not VENICE_API_KEY:
+        logger.error("Venice AI API key not configured")
+        raise HTTPException(status_code=500, detail="Venice AI API key not configured")
+    
+    # Generate or use existing session ID
+    session_id = chat_input.sessionId or str(uuid.uuid4())
+    
+    async def generate():
+        """Generator for streaming response"""
+        try:
+            # Get session and context
+            session = conversation_memory.get_session(session_id)
+            if not session:
+                session = conversation_memory.create_session(session_id)
+            
+            context_window = conversation_memory.get_context_window(
+                session_id,
+                include_recent=8,
+                include_system_summary=True
+            )
+            
+            # Classify query
+            query_type = ai_orchestrator.classify_query(
+                chat_input.message,
+                context_window
+            )
+            
+            # Get user context
+            session_stats = conversation_memory.get_session_stats(session_id)
+            user_context = conversation_context.build_context_for_query(
+                chat_input.message,
+                session_stats,
+                [m.get("content", "")[:30] for m in context_window[-3:] if m.get("role") == "user"]
+            )
+            
+            # Add user message
+            conversation_memory.add_message(
+                session_id,
+                "user",
+                chat_input.message,
+                {"query_type": query_type.value}
+            )
+            
+            # Stream the response
+            model_config = ai_orchestrator.MODEL_CONFIG[query_type]
+            full_response = ""
+            
+            yield f"data: {json.dumps({'type': 'metadata', 'session_id': session_id, 'query_type': query_type.value, 'model': model_config['model']})}\n\n"
+            
+            async for token in ai_orchestrator.chat_stream(
+                user_message=chat_input.message,
+                conversation_history=context_window,
+                query_type=query_type,
+                user_context=user_context if user_context else None
+            ):
+                full_response += token
+                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+            
+            # Add AI response to conversation
+            conversation_memory.add_message(
+                session_id,
+                "assistant",
+                full_response,
+                {"query_type": query_type.value}
+            )
+            
+            yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Stream error: {str(e)}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@api_router.get("/chat/stats/{session_id}")
+async def get_chat_stats(session_id: str):
+    """Get statistics about a chat session"""
+    stats = conversation_memory.get_session_stats(session_id)
+    if not stats:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return stats
+
+
+@api_router.delete("/chat/{session_id}")
+async def clear_chat_session(session_id: str):
+    """Clear a chat session"""
+    if conversation_memory.clear_session(session_id):
+        return {"success": True, "message": f"Session {session_id} cleared"}
+    raise HTTPException(status_code=404, detail="Session not found")
 
 @api_router.post("/contact", response_model=ContactResponse)
 async def submit_contact_form(contact: ContactForm):
@@ -269,6 +363,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Add JSON import at module level
+import json
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,15 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Minimize2, Maximize2, Sparkles } from 'lucide-react';
-import { chatAPI } from '../services/api';
+import { Send, Bot, User, Minimize2, Maximize2, Sparkles, Zap } from 'lucide-react';
+import { chatAPI, StreamEvent } from '../services/api';
 import { ChatMessage, ChatRequest } from '../types';
 import DOMPurify from 'dompurify';
 
+interface ChatMessageWithMetadata extends ChatMessage {
+  queryType?: string;
+  modelUsed?: string;
+}
+
 const AIChat: React.FC = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [messages, setMessages] = useState<ChatMessageWithMetadata[]>([
     {
       id: 1,
       type: 'ai',
-      content: "Hi! I'm an AI assistant powered by Venice AI. I'm here to help answer your questions and provide information. What can I help you with today?",
+      content: "Hi! I'm Tolu's AI assistant powered by Venice AI. I use intelligent model routing to give you fast, accurate responses. Ask me anything about Tolu's background, skills, or projects!",
       timestamp: new Date()
     }
   ]);
@@ -20,7 +25,10 @@ const AIChat: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState<boolean>(true);
   const [hasLoadedFromStorage, setHasLoadedFromStorage] = useState<boolean>(false);
+  const [currentModel, setCurrentModel] = useState<string>('');
+  const [currentQueryType, setCurrentQueryType] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const streamingMessageIdRef = useRef<number | null>(null);
 
   const scrollToBottom = (): void => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -100,7 +108,7 @@ const AIChat: React.FC = () => {
     setError(null);
 
     // Add user message
-    const userMessage: ChatMessage = {
+    const userMessage: ChatMessageWithMetadata = {
       id: Date.now(),
       type: 'user',
       content: inputMessage,
@@ -108,62 +116,99 @@ const AIChat: React.FC = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = inputMessage;
     setInputMessage('');
     setIsLoading(true);
 
     try {
-      // Call backend API
-      const requestData: ChatRequest = {
-        message: inputMessage,
-        sessionId
-      };
-      const response = await chatAPI.sendMessage(requestData);
-
-      // Set session ID from response if not already set
-      if (!sessionId) {
-        setSessionId(response.sessionId);
-      }
-
-      // Add AI response
-      const aiMessage: ChatMessage = {
-        id: Date.now() + 1,
+      // Create streaming AI message
+      const aiMessageId = Date.now() + 1;
+      streamingMessageIdRef.current = aiMessageId;
+      
+      const aiMessage: ChatMessageWithMetadata = {
+        id: aiMessageId,
         type: 'ai',
-        content: response.response,
-        timestamp: new Date(response.timestamp)
+        content: '',
+        timestamp: new Date()
       };
 
       setMessages(prev => [...prev, aiMessage]);
+
+      // Call streaming API
+      const requestData: ChatRequest = {
+        message: currentInput,
+        sessionId
+      };
+
+      // Stream the response
+      let streamedContent = '';
+      let receivedMetadata = false;
+
+      for await (const event of chatAPI.streamMessage(requestData)) {
+        if (event.type === 'metadata') {
+          // Set session ID and metadata on first message
+          if (!sessionId) {
+            setSessionId(event.session_id);
+          }
+          setCurrentQueryType(event.query_type);
+          setCurrentModel(event.model);
+          receivedMetadata = true;
+        } else if (event.type === 'token') {
+          // Accumulate tokens
+          streamedContent += event.content;
+          
+          // Update message content in real-time
+          setMessages(prev => 
+            prev.map(msg => 
+              msg.id === aiMessageId 
+                ? { ...msg, content: streamedContent, modelUsed: currentModel, queryType: currentQueryType }
+                : msg
+            )
+          );
+        } else if (event.type === 'done') {
+          // Stream complete
+          if (event.session_id) {
+            setSessionId(event.session_id);
+          }
+        } else if (event.type === 'error') {
+          throw new Error(event.error || 'Stream error occurred');
+        }
+      }
+
+      streamingMessageIdRef.current = null;
 
     } catch (error: any) {
       console.error('Chat error:', error);
 
       // Extract error message safely
-      let errorMessage = "I'm sorry, I'm having trouble connecting to my AI brain right now.";
+      let errorMessage = "I'm sorry, I'm having trouble streaming my response right now.";
       
-      if (error?.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-      } else if (error?.message) {
+      if (error?.message) {
         errorMessage = error.message;
       } else if (typeof error === 'string') {
         errorMessage = error;
       }
 
+      // Remove the empty AI message if streaming failed
+      if (streamingMessageIdRef.current) {
+        setMessages(prev => prev.filter(msg => msg.id !== streamingMessageIdRef.current));
+        streamingMessageIdRef.current = null;
+      }
+
       // Add error message to chat
-      const errorChatMessage: ChatMessage = {
-        id: Date.now() + 1,
+      const errorChatMessage: ChatMessageWithMetadata = {
+        id: Date.now() + 2,
         type: 'ai',
-        content: `${errorMessage} Please try again later or contact Tolu directly if the issue persists!`,
+        content: `${errorMessage} Please try again or contact Tolu if the issue persists!`,
         timestamp: new Date()
       };
 
       setMessages(prev => [...prev, errorChatMessage]);
       
       // Set user-friendly error for display
-      const displayError = error?.response?.status === 504 
-        ? "Venice AI service is temporarily unavailable" 
-        : error?.response?.status === 503
-        ? "Unable to connect to AI service"
-        : "Failed to get AI response";
+      const displayError = error?.message?.includes('404')
+        ? "Stream endpoint not available"
+        : "Failed to stream AI response";
         
       setError(displayError);
     } finally {
@@ -209,13 +254,22 @@ const AIChat: React.FC = () => {
           {/* Chat Header */}
           <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-4 text-white">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-3 flex-1">
                 <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
                   <Bot size={20} />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="font-semibold">AI Tolu Assistant</h3>
-                  <p className="text-blue-100 text-sm">Powered by Venice AI</p>
+                  <p className="text-blue-100 text-xs">
+                    {currentModel ? (
+                      <span className="flex items-center">
+                        <Zap size={12} className="mr-1" />
+                        {currentModel} • {currentQueryType ? currentQueryType.replace('_', ' ') : 'Loading...'}
+                      </span>
+                    ) : (
+                      <span>Powered by Venice AI</span>
+                    )}
+                  </p>
                 </div>
               </div>
               <button
@@ -348,6 +402,9 @@ const AIChat: React.FC = () => {
         <div className="text-center mt-8">
           <p className="text-gray-500 text-sm">
             🤖 Powered by Venice AI • {sessionId ? `Session: ${sessionId.slice(0, 8)}...` : 'Starting new session'}
+          </p>
+          <p className="text-gray-400 text-xs mt-2">
+            ⚡ Smart model routing: Fast models for simple questions, advanced models for complex reasoning
           </p>
         </div>
       </div>

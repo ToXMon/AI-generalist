@@ -3,7 +3,7 @@ version: "2.0"
 
 services:
   frontend:
-    image: docker.io/wijnaldum/ai-generalist-frontend:v1.3
+    image: docker.io/wijnaldum/ai-generalist-frontend:v1.11
     expose:
       - port: 80
         as: 80
@@ -15,7 +15,7 @@ services:
       - backend
 
   backend:
-    image: docker.io/wijnaldum/ai-generalist-backend:v1.5
+    image: docker.io/wijnaldum/ai-generalist-backend:v1.6
     expose:
       - port: 8000
         as: 8000
@@ -48,27 +48,6 @@ profiles:
           size: "1Gi"
         storage:
           size: "1Gi"
-  placement:
-    global:
-      attributes:
-        host: akash
-      pricing:
-        frontend-profile:
-          denom: uakt
-          amount: "10000"
-        backend-profile:
-          denom: uakt
-          amount: "20000"
-
-deployment:
-  frontend:
-    global:
-      profile: frontend-profile
-      count: 1
-  backend:
-    global:
-      profile: backend-profile
-      count: 1
   placement:
     global:
       attributes:
