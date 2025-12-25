@@ -1,12 +1,11 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime
 import httpx
@@ -88,6 +87,9 @@ class AIOrchestrator:
         }
     }
     
+    # Configurable timeout for API requests (in seconds)
+    REQUEST_TIMEOUT = float(os.getenv("AI_REQUEST_TIMEOUT", "30.0"))
+    
     SYSTEM_PROMPT = """You are a helpful AI assistant powered by Venice AI. You have access to web search capabilities to provide accurate and up-to-date information. 
 
 You can:
@@ -106,7 +108,7 @@ When answering questions:
         self.api_key = VENICE_API_KEY
         self.base_url = VENICE_BASE_URL
     
-    def get_model_config(self) -> Dict:
+    def get_model_config(self) -> Dict[str, Any]:
         """Get the current model configuration."""
         return self.MODEL_CONFIG.copy()
     
@@ -115,7 +117,7 @@ When answering questions:
         if not self.api_key:
             raise HTTPException(status_code=500, detail="Venice AI API key not configured")
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=self.REQUEST_TIMEOUT) as client:
             logger.info(f"Making Venice AI request to: {self.base_url}/chat/completions")
             
             request_payload = {
@@ -220,9 +222,9 @@ async def chat_with_ai(request: Request, chat_input: ChatMessage):
             sessionId=session_id
         )
         
-    except HTTPException:
-        raise
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
         logger.error(f"Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Chat service error: {str(e)}")
 
