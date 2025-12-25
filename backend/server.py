@@ -20,6 +20,14 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 
+# Configure logging first
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 load_dotenv(ROOT_DIR / '.env')
@@ -66,6 +74,80 @@ class ContactResponse(BaseModel):
 VENICE_API_KEY = os.getenv("VENICE_API_KEY")
 VENICE_BASE_URL = "https://api.venice.ai/api/v1"
 
+
+class AIOrchestrator:
+    """AI Orchestrator class for managing AI model configurations and interactions."""
+    
+    MODEL_CONFIG = {
+        "model": os.getenv("AI_MODEL", "qwen3-235b"),
+        "temperature": float(os.getenv("AI_TEMPERATURE", "0.7")),
+        "max_completion_tokens": int(os.getenv("AI_MAX_TOKENS", "512")),
+        "venice_parameters": {
+            "include_venice_system_prompt": False,
+            "enable_web_search": "on"
+        }
+    }
+    
+    SYSTEM_PROMPT = """You are a helpful AI assistant powered by Venice AI. You have access to web search capabilities to provide accurate and up-to-date information. 
+
+You can:
+- Answer questions on any topic using your knowledge and web search
+- Provide explanations, summaries, and insights
+- Help with problem-solving and research
+- Engage in general conversation
+
+When answering questions:
+- Use web search when you need current information or to verify facts
+- Be informative, accurate, and helpful
+- Cite sources when appropriate
+- Keep responses clear and well-structured"""
+    
+    def __init__(self):
+        self.api_key = VENICE_API_KEY
+        self.base_url = VENICE_BASE_URL
+    
+    def get_model_config(self) -> Dict:
+        """Get the current model configuration."""
+        return self.MODEL_CONFIG.copy()
+    
+    async def generate_response(self, messages: List[Dict], session_id: str) -> str:
+        """Generate AI response using Venice AI."""
+        if not self.api_key:
+            raise HTTPException(status_code=500, detail="Venice AI API key not configured")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            logger.info(f"Making Venice AI request to: {self.base_url}/chat/completions")
+            
+            request_payload = {
+                "messages": messages,
+                **self.MODEL_CONFIG
+            }
+            
+            response = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json=request_payload
+            )
+            
+            if response.status_code != 200:
+                error_detail = response.text
+                try:
+                    error_detail = response.json()
+                except Exception:
+                    pass
+                logger.error(f"Venice AI API error: {response.status_code} - {error_detail}")
+                raise HTTPException(status_code=500, detail=f"Venice AI API error: {response.status_code}")
+            
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+
+
+# Global AI orchestrator instance
+ai_orchestrator = AIOrchestrator()
+
 # Email Configuration
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
@@ -83,12 +165,12 @@ async def root():
 async def chat_with_ai(request: Request, chat_input: ChatMessage):
     """Handle AI chat conversations using Venice AI"""
     
-    if not VENICE_API_KEY:
+    if not ai_orchestrator.api_key:
         logger.error("Venice AI API key not configured")
         raise HTTPException(status_code=500, detail="Venice AI API key not configured")
     
     # Log API key status for debugging (without exposing the key)
-    logger.info(f"Venice API key configured: {bool(VENICE_API_KEY)}, length: {len(VENICE_API_KEY) if VENICE_API_KEY else 0}")
+    logger.info(f"Venice API key configured: {bool(ai_orchestrator.api_key)}, length: {len(ai_orchestrator.api_key) if ai_orchestrator.api_key else 0}")
     
     # Generate or use existing session ID
     session_id = chat_input.sessionId or str(uuid.uuid4())
@@ -102,19 +184,7 @@ async def chat_with_ai(request: Request, chat_input: ChatMessage):
         messages = [
             {
                 "role": "system", 
-                "content": """You are a helpful AI assistant powered by Venice AI. You have access to web search capabilities to provide accurate and up-to-date information. 
-
-You can:
-- Answer questions on any topic using your knowledge and web search
-- Provide explanations, summaries, and insights
-- Help with problem-solving and research
-- Engage in general conversation
-
-When answering questions:
-- Use web search when you need current information or to verify facts
-- Be informative, accurate, and helpful
-- Cite sources when appropriate
-- Keep responses clear and well-structured"""
+                "content": ai_orchestrator.SYSTEM_PROMPT
             }
         ]
         
@@ -131,39 +201,8 @@ When answering questions:
             "content": chat_input.message
         })
         
-        # Call Venice AI
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            logger.info(f"Making Venice AI request to: {VENICE_BASE_URL}/chat/completions")
-            response = await client.post(
-                f"{VENICE_BASE_URL}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {VENICE_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "qwen3-235b",
-                    "messages": messages,
-                    "temperature": 0.7,
-                    "max_completion_tokens": 512,
-                    "venice_parameters": {
-                        "include_venice_system_prompt": False,
-                        "enable_web_search": "on"
-                    }
-                }
-            )
-            
-            if response.status_code != 200:
-                error_detail = response.text
-                try:
-                    error_detail = response.json()
-                except Exception:
-                    pass
-                logger.error(f"Venice AI API error: {response.status_code} - {error_detail}")
-                logger.error(f"Request headers: Authorization: Bearer {VENICE_API_KEY[:10]}...")  # Log first 10 chars only
-                raise HTTPException(status_code=500, detail=f"Venice AI API error: {response.status_code}")
-            
-            result = response.json()
-            ai_response = result["choices"][0]["message"]["content"]
+        # Use AI orchestrator to generate response
+        ai_response = await ai_orchestrator.generate_response(messages, session_id)
         
         # Save conversation to in-memory storage
         new_messages = conversation_history + [
@@ -181,6 +220,8 @@ When answering questions:
             sessionId=session_id
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Chat service error: {str(e)}")
@@ -262,13 +303,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     import uvicorn
