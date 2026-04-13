@@ -132,3 +132,35 @@ python backend_test.py
 - **Backend**: Python, FastAPI, Venice AI
 - **Database**: MongoDB
 - **Deployment**: Docker, Docker Compose
+
+## Architecture
+
+```
+┌──────────┐     ┌──────────┐     ┌───────────┐
+│  React   │────▶│ FastAPI  │────▶│ Venice AI │
+│ Frontend │     │ Backend  │     │   API     │
+│  :3000   │◀────│  :8000   │     │           │
+└──────────┘     └────┬─────┘     └───────────┘
+                      │
+                 ┌────┴─────┐
+                 │  SMTP    │
+                 │ (Email)  │
+                 └──────────┘
+```
+
+- **Frontend**: React + TypeScript + Tailwind CSS (served by Nginx in production)
+- **Backend**: FastAPI with Pydantic validation, SlowAPI rate limiting, in-memory chat sessions
+- **AI**: Venice AI proxy for LLM chat completion with web search
+- **Production**: Docker Compose + Nginx reverse proxy, deployed on Akash Network
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Commit: `git commit -m "feat: description"`
+4. Push: `git push origin feature/my-feature`
+5. Open a Pull Request
+
+## License
+
+MIT
